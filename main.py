@@ -2,7 +2,7 @@ import os
 import re
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, messagebox
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 try:
     from PyPDF2 import PdfReader
@@ -14,15 +14,12 @@ try:
 except Exception:
     load_dotenv = None
 
-if TYPE_CHECKING:
-    from openai import OpenAI as OpenAIClient
-else:
-    OpenAIClient = object
-
 try:
-    from openai import OpenAI
+    from google import genai
+    from google.genai import types
 except Exception:
-    OpenAI = None
+    genai = None
+    types = None
 
 
 APP_TITLE = "Professional Persona Chat"
@@ -45,9 +42,10 @@ def read_pdf_text(path: str) -> str:
 def build_system_prompt(resume_text: str) -> str:
     guard_rails = (
         "SYSTEM GUARD RAILS:\n"
+        "- You are the resume owner. Speak in first person (I, me, my).\n"
         "- Only answer using facts explicitly found in the resume below.\n"
         "- If a question is outside the resume, reply: "
-        "\"I don't have that information.\" and do not speculate.\n"
+        "\"I don't have that information in my resume.\" and do not speculate.\n"
         "- Ask for the user's email and their reason if they want to contact me.\n"
         "- Keep responses professional and concise.\n"
     )
@@ -75,25 +73,25 @@ def log_contact(email: str, context: str) -> None:
         f.write(f"email: {email} | context: {context.strip()}\n")
 
 
-def get_openai_client() -> "OpenAIClient":
+def get_gemini_client():
     if load_dotenv is not None:
         load_dotenv()
-    if OpenAI is None:
-        raise RuntimeError("openai not installed. Run: pip install openai")
-    return OpenAI()
+    if genai is None:
+        raise RuntimeError("google-genai not installed. Run: pip install google-genai")
+    return genai.Client()
 
 
 def call_llm(system_prompt: str, user_msg: str) -> str:
-    client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-5")
-    response = client.responses.create(
+    client = get_gemini_client()
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    response = client.models.generate_content(
         model=model,
-        input=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ],
+        contents=user_msg,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
     )
-    return (response.output_text or "").strip()
+    return (response.text or "").strip()
 
 
 class ChatApp:
